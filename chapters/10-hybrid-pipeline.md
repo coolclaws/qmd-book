@@ -10,128 +10,66 @@
 
 每个阶段都有明确的短路或跳过条件，这使得简单查询可以在几毫秒内返回，而模糊查询则自动启用全链路。理解这八步之间的数据流动，就等于理解了 qmd 检索的全部核心逻辑。
 
-<div class="pipeline-diagram">
-  <div class="pipeline-step">
-    <div class="step-num">1</div>
-    <div class="step-body">
-      <div class="step-title">BM25 探针</div>
-      <div class="step-note">⚡ 强信号（score ≥ 0.85 且分差 ≥ 0.15）直接短路，跳过后续所有步骤</div>
-    </div>
-  </div>
-  <div class="pipeline-arrow">↓ <span>无强信号时继续</span></div>
-  <div class="pipeline-step">
-    <div class="step-num">2</div>
-    <div class="step-body">
-      <div class="step-title">查询扩展（expandQuery）</div>
-      <div class="step-note">🔀 LLM 生成 lex / vec / hyde 三类变体，结果带缓存，相同查询不重复调用</div>
-    </div>
-  </div>
-  <div class="pipeline-arrow">↓</div>
-  <div class="pipeline-step">
-    <div class="step-num">3</div>
-    <div class="step-body">
-      <div class="step-title">分型路由搜索</div>
-      <div class="step-note">🗂 lex → FTS 全文；vec / hyde → sqlite-vec 向量；所有向量变体批量嵌入，一次往返</div>
-    </div>
-  </div>
-  <div class="pipeline-arrow">↓</div>
-  <div class="pipeline-step">
-    <div class="step-num">4</div>
-    <div class="step-body">
-      <div class="step-title">RRF 融合</div>
-      <div class="step-note">🔢 score += weight / (60 + rank + 1)；原始查询列表权重 ×2；排名前三额外加 0.05 分</div>
-    </div>
-  </div>
-  <div class="pipeline-arrow">↓</div>
-  <div class="pipeline-step">
-    <div class="step-num">5</div>
-    <div class="step-body">
-      <div class="step-title">分块选择（chunkDocument）</div>
-      <div class="step-note">✂️ 取候选文档（上限 40）的最佳块，降低重排输入规模；intent 术语权重 0.5</div>
-    </div>
-  </div>
-  <div class="pipeline-arrow">↓</div>
-  <div class="pipeline-step">
-    <div class="step-num">6</div>
-    <div class="step-body">
-      <div class="step-title">重排（rerank）</div>
-      <div class="step-note">🎯 交叉编码器对块文本打分，理解查询与文档的深层语义关系</div>
-    </div>
-  </div>
-  <div class="pipeline-arrow">↓</div>
-  <div class="pipeline-step">
-    <div class="step-num">7</div>
-    <div class="step-body">
-      <div class="step-title">位置感知混合</div>
-      <div class="step-note">⚖️ RRF 排名越靠前，rrfWeight 越高（前3名 0.75 → 11名后 0.40）；保护多路一致的强结果</div>
-    </div>
-  </div>
-  <div class="pipeline-arrow">↓</div>
-  <div class="pipeline-step">
-    <div class="step-num">8</div>
-    <div class="step-body">
-      <div class="step-title">去重与过滤</div>
-      <div class="step-note">🧹 按文件路径去重，应用 minScore 阈值，按 limit 截取最终结果</div>
-    </div>
-  </div>
-</div>
-
-<style>
-.pipeline-diagram {
-  margin: 1.5rem 0 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-.pipeline-step {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  background: var(--vp-c-bg-soft);
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-}
-.step-num {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: #6366f1;
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 1px;
-}
-.step-body {
-  flex: 1;
-}
-.step-title {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--vp-c-text-1);
-  margin-bottom: 0.2rem;
-}
-.step-note {
-  font-size: 0.85rem;
-  color: var(--vp-c-text-2);
-  line-height: 1.5;
-}
-.pipeline-arrow {
-  text-align: center;
-  color: var(--vp-c-text-3);
-  font-size: 0.8rem;
-  padding: 2px 0;
-  line-height: 1.4;
-}
-.pipeline-arrow span {
-  font-size: 0.75rem;
-  color: var(--vp-c-brand);
-}
-</style>
+```
+用户查询
+    |
+    v
++---------------------------+
+| 1. BM25 探针              |  score >= 0.85 且分差 >= 0.15
+|    强信号检测              |  --> 直接短路，跳过后续所有步骤
++---------------------------+
+    | 无强信号
+    v
++---------------------------+
+| 2. 查询扩展               |  LLM 生成 lex / vec / hyde 三类变体
+|    expandQuery()          |  带缓存，相同查询不重复调用 LLM
++---------------------------+
+    |
+    v
++---------------------------+
+| 3. 分型路由搜索            |  lex  --> FTS 全文检索（同步，毫秒级）
+|    批量嵌入               |  vec / hyde --> sqlite-vec 向量搜索
+|                           |  所有向量变体一次批量嵌入
++---------------------------+
+    |
+    v
++---------------------------+
+| 4. RRF 融合               |  score += weight / (60 + rank + 1)
+|    reciprocalRankFusion() |  原始查询列表权重 x2
+|                           |  排名 1 额外 +0.05，排名 2-3 额外 +0.02
++---------------------------+
+    |
+    v
++---------------------------+
+| 5. 分块选择               |  候选上限 40 篇
+|    chunkDocument()        |  关键词重叠选最佳块，intent 术语权重 0.5
+|                           |  只送块文本给重排，降低计算量
++---------------------------+
+    |
+    v
++---------------------------+
+| 6. 重排                   |  交叉编码器对块文本打分
+|    rerank()               |  捕捉查询与文档的深层语义关系
++---------------------------+
+    |
+    v
++---------------------------+
+| 7. 位置感知混合            |  前 3 名：rrfWeight = 0.75
+|    blendedScore           |  第 4-10 名：rrfWeight = 0.60
+|                           |  11 名后：rrfWeight = 0.40
+|                           |  score = rrfW*(1/rank) + (1-rrfW)*rerank
++---------------------------+
+    |
+    v
++---------------------------+
+| 8. 去重与过滤              |  按文件路径去重
+|                           |  应用 minScore 阈值
+|                           |  按 limit 截取返回数量
++---------------------------+
+    |
+    v
+HybridQueryResult[]
+```
 
 ## 第一步：BM25 探针
 

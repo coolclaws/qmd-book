@@ -1,0 +1,38 @@
+---
+layout: home
+hero:
+  name: qmd 源码解析
+  text: 本地混合搜索引擎
+  tagline: BM25 + 向量 + 重排，专为 AI 工作流设计
+  image:
+    src: /logo.png
+    alt: qmd
+  actions:
+    - theme: brand
+      text: 开始阅读
+      link: /chapters/01-overview
+    - theme: alt
+      text: 完整目录
+      link: /contents
+    - theme: alt
+      text: GitHub
+      link: https://github.com/tobi/qmd
+
+features:
+  - icon:
+      src: /icons/overview.svg
+    title: 架构全景
+    details: 从 SQLite + FTS5 + sqlite-vec 三层存储，到 BM25 / 向量 / 重排三路检索，完整拆解 qmd 的设计哲学
+  - icon:
+      src: /icons/search.svg
+    title: 三路搜索引擎
+    details: BM25 全文检索、余弦向量搜索、LLM 重排序——三条管线如何通过 RRF 融合产出最终排名
+  - icon:
+      src: /icons/pipeline.svg
+    title: 混合查询管线
+    details: 强信号探测、查询扩展、分块选择、位置感知混合——8 步管线的每一步设计取舍
+  - icon:
+      src: /icons/api.svg
+    title: SDK / MCP / CLI
+    details: 三种消费方式共享同一套 Store 原语，从库模式到 MCP 协议到命令行的分层设计
+---
